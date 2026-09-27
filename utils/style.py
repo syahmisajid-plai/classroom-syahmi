@@ -129,6 +129,35 @@ def load_style():
                 0 4px 15px rgba(15, 23, 42, 0.04);
         }
 
+        .random-result-card {
+            background: linear-gradient(135deg, #111827 0%, #1e3a8a 100%);
+            padding: 28px 24px;
+            border-radius: 20px;
+            text-align: center;
+            margin: 10px 0 22px 0;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+        }
+
+        .random-result-label {
+            color: #cbd5e1;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .random-result-number {
+            color: white;
+            font-size: 38px;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+
+        .random-result-subtitle {
+            color: #bfdbfe;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
 
         /* =========================
            MOBILE

@@ -3,6 +3,7 @@ import random
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import time
 
 from utils.style import load_style
 from utils.supabase_client import supabase
@@ -15,9 +16,29 @@ load_style()
 
 
 def format_waktu(timestamp):
-    dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    dt = dt.astimezone(ZoneInfo("Asia/Jakarta"))
-    return dt.strftime("%d %B %Y, %H:%M WIB")
+    if not timestamp:
+        return "-"
+
+    try:
+        timestamp = str(timestamp)
+
+        # Ambil YYYY-MM-DD HH:MM:SS
+        tanggal = timestamp[:10]
+        waktu = timestamp[11:19]
+
+        # Buat datetime dari bagian yang diperlukan saja
+        dt = datetime.strptime(f"{tanggal} {waktu}", "%Y-%m-%d %H:%M:%S")
+
+        # Timestamp Supabase adalah UTC
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+
+        # Konversi ke WIB
+        dt = dt.astimezone(ZoneInfo("Asia/Jakarta"))
+
+        return dt.strftime("%d %B %Y, %H:%M WIB")
+
+    except Exception:
+        return "-"
 
 
 # =========================
@@ -73,7 +94,17 @@ st.divider()
 # INFORMASI TUGAS
 # =========================
 
-st.subheader("📚 Informasi Tugas")
+col1, col2 = st.columns([5, 1])
+
+with col1:
+    st.subheader("📚 Informasi Tugas")
+
+with col2:
+    if st.button(
+        "🔄 Refresh",
+        use_container_width=True,
+    ):
+        st.rerun()
 
 
 # =========================
@@ -150,7 +181,7 @@ submissions_response = (
     supabase.table("submissions")
     .select(
         "id, answer, submitted_at, called_at, "
-        "submission_members(student_id, students(id, nim, name))"
+        "submission_members(student_id, role, students(id, nim, name))"
     )
     .eq("meeting_id", meeting_id)
     .order("submitted_at")
@@ -249,7 +280,8 @@ for item in submission:
 
     for member in item["submission_members"]:
 
-        mahasiswa_sudah_mengumpulkan.add(member["student_id"])
+        if member["role"] == "member":
+            mahasiswa_sudah_mengumpulkan.add(member["student_id"])
 
 
 # Mahasiswa yang belum mengumpulkan
@@ -299,73 +331,231 @@ st.subheader("🎲 Random Jawaban")
 belum_dipanggil_data = [item for item in submission if item["called_at"] is None]
 
 
+@st.dialog("🎲 Random Kelompok")
+def random_kelompok():
+
+    if not belum_dipanggil_data:
+        st.warning("Semua kelompok sudah dipanggil.")
+        return
+
+    st.markdown("### 🎲 Memilih Kelompok...")
+    st.caption("Mohon tunggu sebentar.")
+
+    # =========================
+    # ANIMASI DADU
+    # =========================
+
+    dice_placeholder = st.empty()
+
+    dice = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"]
+
+    for _ in range(20):
+        dice_placeholder.markdown(
+            f"""
+            <div style="
+                text-align: center;
+                font-size: 120px;
+                line-height: 1;
+                margin: 30px 0;
+            ">
+                {random.choice(dice)}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        time.sleep(0.12)
+
+    # =========================
+    # HASIL RANDOM
+    # =========================
+
+    # Random hanya dilakukan jika belum ada kelompok yang dipilih
+    if "submission_terpilih" not in st.session_state:
+
+        terpilih = random.choice(belum_dipanggil_data)
+
+        st.session_state.submission_terpilih = terpilih["id"]
+
+        # Mulai daftar penanggap sementara
+        st.session_state.penanggap_sementara = []
+
+    else:
+
+        # Ambil kembali kelompok yang sudah dipilih
+        terpilih = next(
+            item
+            for item in belum_dipanggil_data
+            if item["id"] == st.session_state.submission_terpilih
+        )
+
+    # =========================
+    # HASIL TERPILIH
+    # =========================
+
+    dice_placeholder.markdown(
+        "<div style='text-align:center; font-size:80px;'>🎉</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f"# Kelompok {terpilih['nomor']}")
+
+    st.success("🎉 Kelompok terpilih!")
+
+    st.divider()
+
+    # =========================
+    # ANGGOTA
+    # =========================
+
+    st.markdown("#### 👥 Anggota")
+
+    for nama in terpilih["anggota"]:
+        st.write(f"• {nama}")
+
+    # =========================
+    # JAWABAN
+    # =========================
+
+    st.subheader("💬 JAWABAN")
+
+    st.text_area(
+        "Jawaban kelompok",
+        value=terpilih["answer"],
+        height=220,
+        disabled=True,
+        label_visibility="collapsed",
+    )
+
+    st.caption(f"📅 Dikumpulkan · {format_waktu(terpilih['waktu'])}")
+
+    st.divider()
+
+    # =========================
+    # PENANGGAP
+    # =========================
+
+    st.markdown("#### 🙋 Penanggap")
+
+    # Ambil seluruh mahasiswa di kelas
+    students_response = (
+        supabase.table("enrollments")
+        .select("student_id, students(id, name)")
+        .eq(
+            "course_id",
+            course_id,
+        )
+        .execute()
+    )
+
+    students_data = students_response.data
+
+    # ID anggota kelompok
+    member_ids = {member["student_id"] for member in terpilih["submission_members"]}
+
+    # Semua mahasiswa yang bukan anggota kelompok
+    calon_penanggap = {
+        item["students"]["name"]: item["student_id"]
+        for item in students_data
+        if item["student_id"] not in member_ids
+    }
+
+    # =========================
+    # 3 SLOT PENANGGAP
+    # =========================
+
+    nama_mahasiswa = list(calon_penanggap.keys())
+
+    pilihan_penanggap = []
+
+    for i in range(3):
+
+        penanggap = st.selectbox(
+            f"Penanggap {i + 1}",
+            [""] + nama_mahasiswa,
+            index=0,
+            key=f"penanggap_{i}",
+            format_func=lambda x: ("Pilih mahasiswa..." if x == "" else x),
+        )
+
+        if penanggap:
+            pilihan_penanggap.append(
+                {
+                    "student_id": calon_penanggap[penanggap],
+                    "name": penanggap,
+                }
+            )
+
+    # =========================
+    # TANDAI
+    # =========================
+
+    if st.button(
+        "✓ Tandai Sudah Dipanggil",
+        type="primary",
+        use_container_width=True,
+    ):
+
+        # =========================
+        # SIMPAN PENANGGAP
+        # =========================
+
+        if pilihan_penanggap:
+
+            data_penanggap = [
+                {
+                    "submission_id": terpilih["id"],
+                    "student_id": item["student_id"],
+                    "role": "respondent",
+                }
+                for item in pilihan_penanggap
+            ]
+
+            supabase.table("submission_members").insert(data_penanggap).execute()
+
+        # =========================
+        # TANDAI SUDAH DIPANGGIL
+        # =========================
+
+        (
+            supabase.table("submissions")
+            .update({"called_at": datetime.now(ZoneInfo("UTC")).isoformat()})
+            .eq(
+                "id",
+                terpilih["id"],
+            )
+            .execute()
+        )
+
+        # =========================
+        # BERSIHKAN STATE
+        # =========================
+
+        st.session_state.pop(
+            "submission_terpilih",
+            None,
+        )
+
+        st.session_state.pop(
+            "penanggap_sementara",
+            None,
+        )
+
+        st.session_state.pop(
+            "penanggap_submission_id",
+            None,
+        )
+
+        st.rerun()
+
+
 if st.button(
     "🎲 RANDOM",
     type="primary",
     use_container_width=True,
 ):
 
-    if belum_dipanggil_data:
-
-        terpilih = random.choice(belum_dipanggil_data)
-
-        st.session_state.submission_terpilih = terpilih["id"]
-
-    else:
-
-        st.warning("Semua kelompok sudah dipanggil.")
-
-
-# =========================
-# HASIL RANDOM
-# =========================
-
-if "submission_terpilih" in st.session_state:
-
-    submission_id = st.session_state.submission_terpilih
-
-    terpilih = next(
-        (item for item in submission if item["id"] == submission_id),
-        None,
-    )
-
-    if terpilih is not None:
-
-        st.success(f"🎉 Kelompok {terpilih['nomor']}")
-
-        st.write("**Waktu mengumpulkan:** " f"{format_waktu(terpilih['waktu'])}")
-
-        st.subheader("👥 Anggota")
-
-        for nama in terpilih["anggota"]:
-            st.write(f"- {nama}")
-
-        st.subheader("💬 Jawaban")
-
-        st.info(terpilih["answer"])
-
-        # =========================
-        # TANDAI SUDAH DIPANGGIL
-        # =========================
-
-        if st.button(
-            "✓ Tandai Sudah Dipanggil",
-            use_container_width=True,
-        ):
-
-            (
-                supabase.table("submissions")
-                .update({"called_at": "now()"})
-                .eq("id", submission_id)
-                .execute()
-            )
-
-            del st.session_state.submission_terpilih
-
-            st.rerun()
-
-
-st.divider()
+    random_kelompok()
 
 
 # =========================
@@ -390,6 +580,22 @@ for item in submission:
 
         for nama in item["anggota"]:
             st.write(f"- {nama}")
+
+        # =========================
+        # PENANGGAP
+        # =========================
+
+        penanggap = [
+            member["students"]["name"]
+            for member in item["submission_members"]
+            if member["role"] == "respondent"
+        ]
+
+        if penanggap:
+            st.write("**Penanggap:**")
+
+            for nama in penanggap:
+                st.write(f"- {nama}")
 
         st.write("**Jawaban:**")
 
