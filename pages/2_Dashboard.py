@@ -414,6 +414,16 @@ def random_kelompok():
         st.write(f"• {nama}")
 
     # =========================
+    # PERTANYAAN
+    # =========================
+
+    st.divider()
+
+    st.markdown("#### ❓ Pertanyaan")
+
+    st.write(meeting["question"])
+
+    # =========================
     # JAWABAN
     # =========================
 

@@ -9,6 +9,12 @@ from utils.supabase_client import supabase
 
 load_style()
 
+# =========================
+# FORM VERSION
+# =========================
+
+if "form_version" not in st.session_state:
+    st.session_state.form_version = 0
 
 # =========================
 # HALAMAN
@@ -45,6 +51,7 @@ mata_kuliah = st.selectbox(
     list(mata_kuliah_options.keys()),
     index=None,
     placeholder="Pilih mata kuliah...",
+    key=f"mata_kuliah_{st.session_state.form_version}",
 )
 
 
@@ -82,6 +89,7 @@ pertemuan = st.selectbox(
     list(pertemuan_options.keys()),
     index=None,
     placeholder="Pilih pertemuan...",
+    key=f"pertemuan_{st.session_state.form_version}",
 )
 
 
@@ -158,7 +166,7 @@ for i in range(st.session_state.jumlah_anggota):
         pilihan_mahasiswa,
         index=None,
         placeholder="Pilih nama mahasiswa...",
-        key=f"nama_{i}",
+        key=f"nama_{st.session_state.form_version}_{i}",
     )
 
     nama_anggota.append(nama)
@@ -187,6 +195,7 @@ jawaban = st.text_area(
     "Tuliskan jawaban hasil diskusi kelompok",
     placeholder="Tuliskan jawaban kelompok di sini...",
     height=250,
+    key=f"jawaban_{st.session_state.form_version}",
 )
 
 
@@ -245,24 +254,17 @@ if st.button(
             supabase.table("submission_members").insert(members_data).execute()
 
             # =========================
-            # BERHASIL
+            # RESET FORM
             # =========================
 
-            st.success("🎉 Jawaban kelompok berhasil dikirim!")
+            st.session_state.form_version += 1
+            st.session_state.jumlah_anggota = 2
 
-            st.markdown(f"""
-                ### {mata_kuliah}
-                **{pertemuan}**
-                """)
+            # =========================
+            # REFRESH
+            # =========================
 
-            st.write("**👥 Anggota Kelompok**")
-            st.write(" • ".join(nama_valid))
-
-            st.info("💬 Jawaban kelompok telah tersimpan.")
-
-            st.caption(
-                "Terima kasih. Jawaban Anda telah berhasil dikirim kepada dosen."
-            )
+            st.rerun()
 
         except Exception as e:
             st.error("❌ Gagal menyimpan jawaban ke Supabase.")
