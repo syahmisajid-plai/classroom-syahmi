@@ -10,11 +10,11 @@ from utils.supabase_client import supabase
 load_style()
 
 # =========================
-# FORM VERSION
+# SESSION STATE
 # =========================
 
-if "form_version" not in st.session_state:
-    st.session_state.form_version = 0
+if "jawaban_terkirim" not in st.session_state:
+    st.session_state.jawaban_terkirim = False
 
 # =========================
 # HALAMAN
@@ -51,7 +51,6 @@ mata_kuliah = st.selectbox(
     list(mata_kuliah_options.keys()),
     index=None,
     placeholder="Pilih mata kuliah...",
-    key=f"mata_kuliah_{st.session_state.form_version}",
 )
 
 
@@ -89,7 +88,6 @@ pertemuan = st.selectbox(
     list(pertemuan_options.keys()),
     index=None,
     placeholder="Pilih pertemuan...",
-    key=f"pertemuan_{st.session_state.form_version}",
 )
 
 
@@ -166,7 +164,7 @@ for i in range(st.session_state.jumlah_anggota):
         pilihan_mahasiswa,
         index=None,
         placeholder="Pilih nama mahasiswa...",
-        key=f"nama_{st.session_state.form_version}_{i}",
+        key=f"nama_{i}",
     )
 
     nama_anggota.append(nama)
@@ -195,7 +193,6 @@ jawaban = st.text_area(
     "Tuliskan jawaban hasil diskusi kelompok",
     placeholder="Tuliskan jawaban kelompok di sini...",
     height=250,
-    key=f"jawaban_{st.session_state.form_version}",
 )
 
 
@@ -213,59 +210,123 @@ if st.button(
 
     nama_valid = [nama.strip() for nama in nama_anggota if nama and nama.strip()]
 
+    # =========================
+    # VALIDASI
+    # =========================
+
     if len(nama_valid) == 0:
-        st.warning("Silakan masukkan minimal satu nama anggota.")
+
+        st.warning("Silakan pilih minimal satu nama anggota.")
 
     elif jawaban.strip() == "":
+
         st.warning("Silakan isi jawaban kelompok terlebih dahulu.")
 
     else:
 
         try:
+
             # =========================
-            # SIMPAN SUBMISSION
+            # ID MAHASISWA
             # =========================
 
-            response = (
-                supabase.table("submissions")
-                .insert(
-                    {
-                        "meeting_id": meeting_id,
-                        "answer": jawaban.strip(),
-                    }
-                )
+            student_ids = [daftar_mahasiswa[nama] for nama in nama_valid]
+
+            # =========================
+            # CEK SUBMISSION SEBELUMNYA
+            # =========================
+
+            existing_submissions = (
+                supabase.table("submission_members")
+                .select("student_id, submissions!inner(meeting_id)")
+                .in_("student_id", student_ids)
+                .eq("submissions.meeting_id", meeting_id)
                 .execute()
             )
 
-            submission_id = response.data[0]["id"]
-
             # =========================
-            # SIMPAN ANGGOTA KELOMPOK
+            # JIKA SUDAH PERNAH MENGIRIM
             # =========================
 
-            members_data = [
-                {
-                    "submission_id": submission_id,
-                    "student_id": daftar_mahasiswa[nama],
-                }
-                for nama in nama_valid
-            ]
+            if existing_submissions.data:
 
-            supabase.table("submission_members").insert(members_data).execute()
+                mahasiswa_sudah_mengirim = [
+                    nama
+                    for nama in nama_valid
+                    if daftar_mahasiswa[nama]
+                    in [item["student_id"] for item in existing_submissions.data]
+                ]
+
+                st.error(
+                    "❌ Jawaban tidak dapat dikirim karena "
+                    "anggota kelompok sudah pernah mengirim "
+                    "jawaban untuk pertemuan ini."
+                )
+
+                st.warning("Mahasiswa yang sudah terdaftar:")
+
+                st.write(" • ".join(mahasiswa_sudah_mengirim))
 
             # =========================
-            # RESET FORM
+            # JIKA BELUM PERNAH MENGIRIM
             # =========================
 
-            st.session_state.form_version += 1
-            st.session_state.jumlah_anggota = 2
+            else:
 
-            # =========================
-            # REFRESH
-            # =========================
+                # =========================
+                # SIMPAN SUBMISSION
+                # =========================
 
-            st.rerun()
+                response = (
+                    supabase.table("submissions")
+                    .insert(
+                        {
+                            "meeting_id": meeting_id,
+                            "answer": jawaban.strip(),
+                        }
+                    )
+                    .execute()
+                )
+
+                submission_id = response.data[0]["id"]
+
+                # =========================
+                # SIMPAN ANGGOTA
+                # =========================
+
+                members_data = [
+                    {
+                        "submission_id": submission_id,
+                        "student_id": student_id,
+                    }
+                    for student_id in student_ids
+                ]
+
+                supabase.table("submission_members").insert(members_data).execute()
+
+                # =========================
+                # BERHASIL
+                # =========================
+
+                st.success("🎉 Jawaban kelompok berhasil dikirim!")
+
+                st.markdown(f"""
+                ### {mata_kuliah}
+                **{pertemuan}**
+                """)
+
+                st.write("**👥 Anggota Kelompok**")
+
+                st.write(" • ".join(nama_valid))
+
+                st.info("💬 Jawaban kelompok telah tersimpan.")
+
+                st.caption(
+                    "Terima kasih. Jawaban Anda telah berhasil " "dikirim kepada dosen."
+                )
 
         except Exception as e:
+
             st.error("❌ Gagal menyimpan jawaban ke Supabase.")
+
             st.exception(e)
