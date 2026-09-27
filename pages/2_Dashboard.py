@@ -1,13 +1,24 @@
 import streamlit as st
 import random
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from utils.style import load_style
+from utils.supabase_client import supabase
 
 # =========================
 # STYLE
 # =========================
 
 load_style()
+
+
+def format_waktu(timestamp):
+    dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    dt = dt.astimezone(ZoneInfo("Asia/Jakarta"))
+    return dt.strftime("%d %B %Y, %H:%M WIB")
+
 
 # =========================
 # LOGIN ADMIN
@@ -64,11 +75,22 @@ st.divider()
 
 st.subheader("📚 Informasi Tugas")
 
+
+# =========================
+# MATA KULIAH
+# =========================
+
+courses_response = (
+    supabase.table("courses").select("id, code, name").eq("is_active", True).execute()
+)
+
+courses = courses_response.data
+
+mata_kuliah_options = {course["name"]: course["id"] for course in courses}
+
 mata_kuliah = st.selectbox(
     "Mata Kuliah",
-    [
-        "Pengantar Sains Data Terapan",
-    ],
+    list(mata_kuliah_options.keys()),
     index=None,
     placeholder="Pilih mata kuliah...",
 )
@@ -78,11 +100,31 @@ if mata_kuliah is None:
     st.stop()
 
 
+course_id = mata_kuliah_options[mata_kuliah]
+
+
+# =========================
+# PERTEMUAN
+# =========================
+
+meetings_response = (
+    supabase.table("meetings")
+    .select("id, meeting_number, title, question")
+    .eq("course_id", course_id)
+    .eq("is_active", True)
+    .order("meeting_number")
+    .execute()
+)
+
+meetings = meetings_response.data
+
+pertemuan_options = {
+    f"Pertemuan {meeting['meeting_number']}": meeting for meeting in meetings
+}
+
 pertemuan = st.selectbox(
     "Pertemuan",
-    [
-        "Pertemuan 1",
-    ],
+    list(pertemuan_options.keys()),
     index=None,
     placeholder="Pilih pertemuan...",
 )
@@ -92,85 +134,50 @@ if pertemuan is None:
     st.stop()
 
 
+meeting = pertemuan_options[pertemuan]
+
+meeting_id = meeting["id"]
+
+
 st.divider()
 
 
 # =========================
-# DATA DUMMY SUBMISSION
+# AMBIL SUBMISSION
 # =========================
 
-submission = [
-    {
-        "nomor": 1,
-        "anggota": ["Andi", "Budi", "Citra"],
-        "jawaban": (
-            "Data penjualan sebuah toko berupa jumlah "
-            "barang yang terjual setiap hari. Data tersebut "
-            "diolah menjadi informasi total penjualan, "
-            "kemudian diketahui bahwa penjualan tertinggi "
-            "terjadi pada akhir pekan. Insight tersebut "
-            "digunakan untuk menentukan keputusan "
-            "menambah stok sebelum akhir pekan."
-        ),
-        "waktu": "09:42",
-        "status": "Belum Dipanggil",
-    },
-    {
-        "nomor": 2,
-        "anggota": ["Dinda", "Eka"],
-        "jawaban": (
-            "Data nilai mahasiswa digunakan untuk menghitung "
-            "rata-rata nilai kelas. Dari informasi tersebut "
-            "terlihat bahwa sebagian besar mahasiswa "
-            "memiliki nilai rendah pada materi tertentu. "
-            "Dosen kemudian memutuskan memberikan latihan "
-            "tambahan."
-        ),
-        "waktu": "09:45",
-        "status": "Belum Dipanggil",
-    },
-    {
-        "nomor": 3,
-        "anggota": ["Fajar", "Gilang", "Hana"],
-        "jawaban": (
-            "Data kehadiran mahasiswa dikumpulkan setiap "
-            "pertemuan. Data tersebut menghasilkan informasi "
-            "persentase kehadiran. Insight menunjukkan "
-            "beberapa mahasiswa sering tidak hadir. "
-            "Keputusan yang diambil adalah melakukan "
-            "pendekatan kepada mahasiswa tersebut."
-        ),
-        "waktu": "09:47",
-        "status": "Sudah Dipanggil",
-    },
-    {
-        "nomor": 4,
-        "anggota": ["Intan", "Joko"],
-        "jawaban": (
-            "Data penggunaan listrik selama satu minggu "
-            "diolah menjadi informasi penggunaan listrik "
-            "setiap hari. Insight menunjukkan penggunaan "
-            "tertinggi terjadi pada sore hari. Keputusan "
-            "yang diambil adalah mengurangi penggunaan "
-            "peralatan yang tidak diperlukan."
-        ),
-        "waktu": "09:51",
-        "status": "Belum Dipanggil",
-    },
-    {
-        "nomor": 5,
-        "anggota": ["Kiki", "Lala", "Maya"],
-        "jawaban": (
-            "Data transaksi pelanggan digunakan untuk "
-            "mengetahui produk yang paling sering dibeli. "
-            "Insight menunjukkan produk tertentu memiliki "
-            "permintaan tinggi. Keputusan yang diambil "
-            "adalah menambah stok produk tersebut."
-        ),
-        "waktu": "09:54",
-        "status": "Belum Dipanggil",
-    },
-]
+submissions_response = (
+    supabase.table("submissions")
+    .select(
+        "id, answer, submitted_at, called_at, "
+        "submission_members(student_id, students(id, nim, name))"
+    )
+    .eq("meeting_id", meeting_id)
+    .order("submitted_at")
+    .execute()
+)
+
+submission = submissions_response.data
+
+
+# =========================
+# FORMAT DATA
+# =========================
+
+for index, item in enumerate(submission, start=1):
+
+    item["nomor"] = index
+
+    item["anggota"] = [
+        member["students"]["name"] for member in item["submission_members"]
+    ]
+
+    item["waktu"] = item["submitted_at"]
+
+    if item["called_at"] is None:
+        item["status"] = "Belum Dipanggil"
+    else:
+        item["status"] = "Sudah Dipanggil"
 
 
 # =========================
@@ -181,7 +188,7 @@ st.subheader("📊 Ringkasan")
 
 total_submission = len(submission)
 
-sudah_dipanggil = sum(1 for item in submission if item["status"] == "Sudah Dipanggil")
+sudah_dipanggil = sum(1 for item in submission if item["called_at"] is not None)
 
 belum_dipanggil = total_submission - sudah_dipanggil
 
@@ -189,63 +196,67 @@ belum_dipanggil = total_submission - sudah_dipanggil
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("📝 Jawaban Masuk", total_submission)
+    st.metric(
+        "📝 Jawaban Masuk",
+        total_submission,
+    )
 
 with col2:
-    st.metric("✅ Sudah Dipanggil", sudah_dipanggil)
+    st.metric(
+        "✅ Sudah Dipanggil",
+        sudah_dipanggil,
+    )
 
 with col3:
-    st.metric("⏳ Belum Dipanggil", belum_dipanggil)
+    st.metric(
+        "⏳ Belum Dipanggil",
+        belum_dipanggil,
+    )
 
 
 st.divider()
+
 
 # =========================
 # MAHASISWA BELUM MENGUMPULKAN
 # =========================
 
-st.divider()
-
 st.subheader("👤 Mahasiswa Belum Mengumpulkan")
 
-# Daftar seluruh mahasiswa di kelas
-daftar_mahasiswa = [
-    "Andi",
-    "Budi",
-    "Citra",
-    "Dinda",
-    "Eka",
-    "Fajar",
-    "Gilang",
-    "Hana",
-    "Intan",
-    "Joko",
-    "Kiki",
-    "Lala",
-    "Maya",
-    "Nanda",
-    "Oki",
-    "Putri",
-    "Rizky",
-    "Salsa",
-    "Tio",
-    "Vina",
-]
+
+# Ambil seluruh mahasiswa yang terdaftar
+enrollments_response = (
+    supabase.table("enrollments")
+    .select("student_id, students(id, nim, name)")
+    .eq("course_id", course_id)
+    .execute()
+)
+
+enrollments = enrollments_response.data
 
 
-# Ambil semua mahasiswa yang sudah mengumpulkan
-mahasiswa_sudah_mengumpulkan = []
+# Semua mahasiswa di kelas
+daftar_mahasiswa = {
+    enrollment["students"]["id"]: enrollment["students"]["name"]
+    for enrollment in enrollments
+}
+
+
+# Mahasiswa yang sudah mengumpulkan
+mahasiswa_sudah_mengumpulkan = set()
 
 for item in submission:
 
-    for nama in item["anggota"]:
+    for member in item["submission_members"]:
 
-        mahasiswa_sudah_mengumpulkan.append(nama)
+        mahasiswa_sudah_mengumpulkan.add(member["student_id"])
 
 
-# Cari mahasiswa yang belum mengumpulkan
+# Mahasiswa yang belum mengumpulkan
 mahasiswa_belum_mengumpulkan = [
-    nama for nama in daftar_mahasiswa if nama not in mahasiswa_sudah_mengumpulkan
+    nama
+    for student_id, nama in daftar_mahasiswa.items()
+    if student_id not in mahasiswa_sudah_mengumpulkan
 ]
 
 
@@ -253,22 +264,30 @@ mahasiswa_belum_mengumpulkan = [
 col1, col2 = st.columns(2)
 
 with col1:
-    st.metric("👥 Total Mahasiswa", len(daftar_mahasiswa))
+    st.metric(
+        "👥 Total Mahasiswa",
+        len(daftar_mahasiswa),
+    )
 
 with col2:
-    st.metric("⏳ Belum Mengumpulkan", len(mahasiswa_belum_mengumpulkan))
+    st.metric(
+        "⏳ Belum Mengumpulkan",
+        len(mahasiswa_belum_mengumpulkan),
+    )
 
 
 # Tampilkan daftar
 if mahasiswa_belum_mengumpulkan:
-
-    for i, nama in enumerate(mahasiswa_belum_mengumpulkan, start=1):
-
-        st.write(f"{i}. {nama}")
-
+    with st.expander(
+        f"👀 Lihat daftar mahasiswa ({len(mahasiswa_belum_mengumpulkan)} orang)"
+    ):
+        for i, nama in enumerate(mahasiswa_belum_mengumpulkan, start=1):
+            st.write(f"{i}. {nama}")
 else:
-
     st.success("🎉 Semua mahasiswa sudah mengumpulkan.")
+
+
+st.divider()
 
 
 # =========================
@@ -277,18 +296,20 @@ else:
 
 st.subheader("🎲 Random Jawaban")
 
-belum_dipanggil_data = [
-    item for item in submission if item["status"] == "Belum Dipanggil"
-]
+belum_dipanggil_data = [item for item in submission if item["called_at"] is None]
 
 
-if st.button("🎲 RANDOM", type="primary", use_container_width=True):
+if st.button(
+    "🎲 RANDOM",
+    type="primary",
+    use_container_width=True,
+):
 
     if belum_dipanggil_data:
 
         terpilih = random.choice(belum_dipanggil_data)
 
-        st.session_state.submission_terpilih = terpilih["nomor"]
+        st.session_state.submission_terpilih = terpilih["id"]
 
     else:
 
@@ -301,30 +322,47 @@ if st.button("🎲 RANDOM", type="primary", use_container_width=True):
 
 if "submission_terpilih" in st.session_state:
 
-    nomor_terpilih = st.session_state.submission_terpilih
+    submission_id = st.session_state.submission_terpilih
 
-    terpilih = next(item for item in submission if item["nomor"] == nomor_terpilih)
+    terpilih = next(
+        (item for item in submission if item["id"] == submission_id),
+        None,
+    )
 
-    st.success(f"🎉 Kelompok {terpilih['nomor']}")
+    if terpilih is not None:
 
-    st.write(f"🕘 **Waktu mengumpulkan:** " f"{terpilih['waktu']}")
+        st.success(f"🎉 Kelompok {terpilih['nomor']}")
 
-    st.subheader("👥 Anggota")
+        st.write("**Waktu mengumpulkan:** " f"{format_waktu(terpilih['waktu'])}")
 
-    for nama in terpilih["anggota"]:
-        st.write(f"- {nama}")
+        st.subheader("👥 Anggota")
 
-    st.subheader("💬 Jawaban")
+        for nama in terpilih["anggota"]:
+            st.write(f"- {nama}")
 
-    st.info(terpilih["jawaban"])
+        st.subheader("💬 Jawaban")
 
-    if st.button("✓ Tandai Sudah Dipanggil", use_container_width=True):
+        st.info(terpilih["answer"])
 
-        terpilih["status"] = "Sudah Dipanggil"
+        # =========================
+        # TANDAI SUDAH DIPANGGIL
+        # =========================
 
-        del st.session_state.submission_terpilih
+        if st.button(
+            "✓ Tandai Sudah Dipanggil",
+            use_container_width=True,
+        ):
 
-        st.rerun()
+            (
+                supabase.table("submissions")
+                .update({"called_at": "now()"})
+                .eq("id", submission_id)
+                .execute()
+            )
+
+            del st.session_state.submission_terpilih
+
+            st.rerun()
 
 
 st.divider()
@@ -336,14 +374,17 @@ st.divider()
 
 st.subheader("📋 Jawaban Masuk")
 
+
 for item in submission:
 
-    if item["status"] == "Sudah Dipanggil":
+    if item["called_at"] is not None:
         icon = "✅"
     else:
         icon = "⏳"
 
-    with st.expander(f"{icon} Kelompok {item['nomor']} • " f"{item['waktu']}"):
+    with st.expander(
+        f"{icon} Kelompok {item['nomor']} • " f"{format_waktu(item['waktu'])}"
+    ):
 
         st.write("**Anggota:**")
 
@@ -352,6 +393,6 @@ for item in submission:
 
         st.write("**Jawaban:**")
 
-        st.write(item["jawaban"])
+        st.write(item["answer"])
 
         st.write(f"**Status:** {item['status']}")
