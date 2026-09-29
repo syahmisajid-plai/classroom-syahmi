@@ -48,32 +48,6 @@ st.write(
     "selama kegiatan pembelajaran berlangsung."
 )
 
-# =========================
-# FEATURES
-# =========================
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.markdown("""
-        ### 📝 Kirim Jawaban
-        Pilih mata kuliah, pertemuan, anggota kelompok,
-        dan kirim jawaban hasil diskusi.
-        """)
-
-with col2:
-    st.markdown("""
-        ### 👥 Aktivitas Kelompok
-        Catat anggota kelompok yang terlibat
-        dalam setiap aktivitas pembelajaran.
-        """)
-
-with col3:
-    st.markdown("""
-        ### 🎲 Random Kelompok
-        Dosen dapat memilih kelompok secara acak
-        untuk mempresentasikan hasil diskusi.
-        """)
 
 # =========================
 # ACTION

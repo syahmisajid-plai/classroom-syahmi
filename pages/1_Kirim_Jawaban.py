@@ -105,6 +105,42 @@ pertanyaan = meeting["question"]
 
 
 # =========================
+# ANGKATAN
+# =========================
+
+angkatan_response = (
+    supabase.table("students")
+    .select("angkatan")
+    .eq("is_active", True)
+    .order("angkatan")
+    .execute()
+)
+
+angkatan_list = sorted(
+    list(
+        set(
+            student["angkatan"]
+            for student in angkatan_response.data
+            if student["angkatan"]
+        )
+    )
+)
+
+angkatan = st.selectbox(
+    "Angkatan",
+    angkatan_list,
+    index=None,
+    placeholder="Pilih angkatan...",
+)
+
+
+# Jika angkatan belum dipilih
+if angkatan is None:
+    st.info("Silakan pilih angkatan terlebih dahulu.")
+    st.stop()
+
+
+# =========================
 # PERTANYAAN
 # =========================
 
@@ -132,12 +168,12 @@ st.caption("Pilih nama mahasiswa yang menjadi anggota kelompok.")
 
 students_response = (
     supabase.table("students")
-    .select("id, nim, name")
+    .select("id, nim, name, angkatan")
     .eq("is_active", True)
+    .eq("angkatan", angkatan)
     .order("name")
     .execute()
 )
-
 students = students_response.data
 
 daftar_mahasiswa = {student["name"]: student["id"] for student in students}
